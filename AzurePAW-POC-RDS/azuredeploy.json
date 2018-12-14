@@ -1,8 +1,883 @@
 {
   "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
-  "parameters": {},
-  "variables": {},
-  "resources": [],
+  "parameters": {
+    "subscriptionID": {
+      "type": "string",
+      "metadata": {
+        "description": "Subscription ID is used to provide access path to the Key Vault"
+      },
+      "defaultValue": "Copy and Paste Subscription ID here. It is provided on the instructions OneNote page."
+    },
+    "domainName": {
+      "type": "string",
+      "metadata": {
+        "description": "Current deployment supports top level domain name only, for example contoso.com, fabrikam.com etc"
+      }
+    },
+    "adminUsername": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the Administrator of the new VMs and Domain"
+      },
+      "defaultValue": "labadmin"
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "The password for the Administrator account of the new VMs and Domain. If you do not change it, then it will look like this: Subscription#SUBSCRIPTIONID"
+      },
+      "defaultValue": "[concat('Subscription#',subscription().subscriptionId)]"
+    },
+    "existingVirtualNetworkName": {
+      "type": "string",
+      "defaultValue": "Add existing vNet Name where this deployment will be deployed to",
+      "metadata": {
+        "description": "Specify the name for the vNet to whcih this server will be deployed."
+      }
+    },
+    "existingVirtualNetworkResourceGroup": {
+      "type": "string",
+      "defaultValue": "Add vNet RG Name",
+      "metadata": {
+        "description": "Name of the existing VNET resource group"
+      }
+    },
+    "RdsSubnetName": {
+      "type": "string",
+      "defaultValue": "Add Subnet Name where RDS will be deployed in vNet -> PAWSubnet...",
+      "metadata": {
+        "description": "Name of the subnet in the virtual network you want to put this VM"
+      }
+    },
+    "vaultName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the Key Vault where secrets are stored"
+      }
+    },
+    "KeyVaultRG": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the RG where Key Vault is stored"
+      }
+    },
+    "VirtualMachineSize": {
+      "type": "string",
+      "allowedValues": [
+        "Standard_DS12_v2",
+        "Standard_A2"
+      ],
+      "metadata": {
+        "description": "VM Size. The bigger it is, the more $ you will spend."
+      },
+      "defaultValue": "Standard_A2"
+    },
+    "vNetIPSpace": {
+      "type": "string",
+      "defaultValue": "10.0",
+      "allowedValues": [
+        "10.0",
+        "10.1",
+        "10.2",
+        "10.3"
+      ],
+      "metadata": {
+        "description": "Specify the IP space for the vNet where this deployment will be installed."
+      }
+    },
+    "adminHost1VMName": {
+      "type": "string",
+      "metadata": {
+        "description": "Must be compliant with Windows Server naming convention"
+      },
+      "defaultValue": "AdminHost1"
+    },
+    "adminHost2VMName": {
+      "type": "string",
+      "metadata": {
+        "description": "Must be compliant with Windows Server naming convention"
+      },
+      "defaultValue": "AdminHost2"
+    },
+    "adminHost3VMName": {
+      "type": "string",
+      "metadata": {
+        "description": "Must be compliant with Windows Server naming convention"
+      },
+      "defaultValue": "AdminHost3"
+    },
+    "ConnectionBrocker1VMName": {
+      "type": "string",
+      "metadata": {
+        "description": "Must be compliant with Windows Server naming convention"
+      },
+      "defaultValue": "CB1-LAB"
+    },
+    "ConnectionBrocker2VMName": {
+      "type": "string",
+      "metadata": {
+        "description": "Must be compliant with Windows Server naming convention"
+      },
+      "defaultValue": "CB2-LAB"
+    },
+    "Gateway1VMName": {
+      "type": "string",
+      "metadata": {
+        "description": "Must be compliant with Windows Server naming convention"
+      },
+      "defaultValue": "GW1-LAB"
+    },
+    "Gateway2VMName": {
+      "type": "string",
+      "metadata": {
+        "description": "Must be compliant with Windows Server naming convention"
+      },
+      "defaultValue": "GW2-LAB"
+    },
+    "ScriptsLocation": {
+      "type": "string",
+      "metadata": {
+        "description": "URL to the Storage Account where scripts are located"
+      },
+      "defaultValue": "https://azurepaw.blob.core.windows.net"
+    }
+  },
+  "variables": {
+    "assetLocation": "https://raw.githubusercontent.com/dmitriilezine/AzurePAW-POC-RDS/master/AzurePAW-POC-RDS",
+    "assetLocationStorageAccount": "[parameters('ScriptsLocation')]",
+    "VMSize": "[parameters('VirtualMachineSize')]",
+    "OSVersion": "2016-Datacenter",
+    "numberOfRdshInstances": 2,
+
+    "RDSsubnetResourceID": "[resourceId(parameters('existingVirtualNetworkResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('existingVirtualNetworkName'), parameters('RdsSubnetName'))]",
+
+    "primaryAzurePAW1IpAddress": "[concat(parameters('vNetIPSpace'),'.3.4')]",
+    "primaryAzurePAW2IpAddress": "[concat(parameters('vNetIPSpace'),'.3.5')]",
+    "primaryAzurePAW3IpAddress": "[concat(parameters('vNetIPSpace'),'.3.6')]",
+    "primaryCB1IpAddress": "[concat(parameters('vNetIPSpace'),'.3.15')]",
+    "primaryCB2IpAddress": "[concat(parameters('vNetIPSpace'),'.3.16')]",
+    "primaryGW1IpAddress": "[concat(parameters('vNetIPSpace'),'.3.17')]",
+    "primaryGW2IpAddress": "[concat(parameters('vNetIPSpace'),'.3.18')]",
+
+    "ilbRDSCBprivateIPAddress": "[concat(parameters('vNetIPSpace'),'.3.100')]",
+    "ilbRDSGWprivateIPAddress": "[concat(parameters('vNetIPSpace'),'.3.101')]",
+
+    "ilbTemplateURL": "[concat(variables('assetLocation'),'/data/ilbDeployment.json')]",
+    "AzurePAW1VMTemplateURL": "[concat(variables('assetLocation'),'/data/AdminHost1VM.json')]",
+
+    "deployRDCBTemplateURL": "[concat(variables('assetLocation'),'/data/deployRDCB.json')]",
+    "deployRDGWTemplateURL": "[concat(variables('assetLocation'),'/data/deployRDGW.json')]",
+    "deployRDSHTemplateURL": "[concat(variables('assetLocation'),'/data/deployRDSH.json')]",
+
+    "paw1VMName": "[parameters('adminHost1VMName')]",
+    "paw2VMName": "[parameters('adminHost2VMName')]",
+    "paw3VMName": "[parameters('adminHost3VMName')]",
+    "cb1VMName": "[parameters('ConnectionBrocker1VMName')]",
+    "cb2VMName": "[parameters('ConnectionBrocker2VMName')]",
+    "gw1VMName": "[parameters('Gateway1VMName')]",
+    "gw2VMName": "[parameters('Gateway2VMName')]",
+
+    "deployILBforRDSCB": "DeployILBforRDSCB",
+    "deployILBforRDSCBId": "[concat('Microsoft.Resources/deployments/', variables('deployILBforRDSCB'))]",
+    "deployILBforRDSGW": "DeployILBforRDSGW",
+    "deployILBforRDSGWId": "[concat('Microsoft.Resources/deployments/', variables('deployILBforRDSGW'))]",
+
+    "paw1VMDeployment": "CreatePAW1VM",
+    "paw1DeploymentId": "[concat('Microsoft.Resources/deployments/', variables('paw1VMDeployment'))]",
+    "paw2VMDeployment": "CreatePAW2VM",
+    "paw2VMDeploymentId": "[concat('Microsoft.Resources/deployments/', variables('paw2VMDeployment'))]",
+    "paw3VMDeployment": "CreatePAW3VM",
+    "paw3VMDeploymentId": "[concat('Microsoft.Resources/deployments/', variables('paw3VMDeployment'))]",
+
+    "cb1VMDeployment": "CreateCB1VM",
+    "cb1VMDeploymentId": "[concat('Microsoft.Resources/deployments/', variables('cb1VMDeployment'))]",
+    "cb2VMDeployment": "CreateCB2VM",
+    "cb2VMDeploymentId": "[concat('Microsoft.Resources/deployments/', variables('cb2VMDeployment'))]",
+    "gw1VMDeployment": "CreateGW1VM",
+    "gw1VMDeploymentId": "[concat('Microsoft.Resources/deployments/', variables('gw1VMDeployment'))]",
+    "gw2VMDeployment": "CreateGW2VM",
+    "gw2VMDeploymentId": "[concat('Microsoft.Resources/deployments/', variables('gw2VMDeployment'))]",
+    "cb1Deployment": "DeployRDCB-RDLS",
+    "cb1DeploymentId": "[concat('Microsoft.Resources/deployments/', variables('cb1Deployment'))]",
+    "gw1Deployment": "DeployRDGW-RDWeb",
+    "gw1DeploymentId": "[concat('Microsoft.Resources/deployments/', variables('gw1Deployment'))]",
+    "rdshDeploymentOnPAW1": "DeployRDSHonPAW1",
+    "rdshDeploymentId": "[concat('Microsoft.Resources/deployments/', variables('rdshDeploymentOnPAW1'))]",
+    "rdshDeploymentOnPAW2": "DeployRDSHonPAW2",
+    "rdshDeploymentPAW2Id": "[concat('Microsoft.Resources/deployments/', variables('rdshDeploymentOnPAW2'))]",
+
+    "shortDomainName": "[split(parameters('domainName'),'.')[0]]",
+    "domainSuffix": "[split(parameters('domainName'),'.')[1]]",
+    "ouPathT0Devices": "[concat('OU=T0-Devices; OU=Tier 0; OU=Admin;', 'DC=',variables('shortDomainName'),'; DC=',variables('domainSuffix'))]",
+    "ouPathAdmin": "[concat('OU=Admin;', 'DC=',variables('shortDomainName'),'; DC=',variables('domainSuffix'))]",
+    "ouPathHGS": "[concat('OU=T0-HGS; OU=T0-Servers; OU=Tier 0; OU=Admin;', 'DC=',variables('shortDomainName'),'; DC=',variables('domainSuffix'))]",
+    "ouPathT0Idenity": "[concat('OU=T0-Identity; OU=T0-Servers; OU=Tier 0; OU=Admin;', 'DC=',variables('shortDomainName'),'; DC=',variables('domainSuffix'))]",
+    "ouPathNone": "",
+
+    "vaultName": "[parameters('vaultName')]",
+    "secretName": "AzurePAWPOC1SAKey2",
+    "secretnameSASurl": "AzurePAWPOC1SAS",
+    "KeyVaultRG": "[parameters('KeyVaultRG')]",
+    "keyVaultID": "[concat('/subscriptions/', parameters('subscriptionID'), '/resourceGroups/', variables('KeyVaultRG'), '/providers/Microsoft.KeyVault/vaults/', variables('vaultName'))]",
+
+    "imageOffer": "WindowsServer",
+    "imagePublisher": "MicrosoftWindowsServer",
+
+    "cbAvailabilitySetName": "cbAvailabiltySet",
+    "gwAvailabilitySetName": "gwAvailabiltySet",
+    "rdshAvailabilitySetName": "rdshAvailabiltySet",
+
+    "ilbRDSCBName": "[concat('ilbRDSCB',resourceGroup().name)]",
+    "ilbRDSCBID": "[resourceId('Microsoft.Network/loadBalancers',variables('ilbRDSCBName'))]",
+    "ilbRDSGWName": "[concat('ilbRDSGW',resourceGroup().name)]",
+    "ilbRDSGWID": "[resourceId('Microsoft.Network/loadBalancers',variables('ilbRDSGWName'))]",
+
+    "paw1NICName": "[concat('PAW1-Nic',resourceGroup().name)]",
+    "paw2NICName": "[concat('PAW2-Nic',resourceGroup().name)]",
+    "paw3NICName": "[concat('PAW3-Nic',resourceGroup().name)]",
+    "cb1NICName": "[concat('CB1-Nic',resourceGroup().name)]",
+    "cb2NICName": "[concat('CB2-Nic',resourceGroup().name)]",
+    "gw1NICName": "[concat('GW1-Nic',resourceGroup().name)]",
+    "gw2NICName": "[concat('GW2-Nic',resourceGroup().name)]"
+
+  },
+  "resources": [
+    {
+      "name": "[variables('cbAvailabilitySetName')]",
+      "type": "Microsoft.Compute/availabilitySets",
+      "apiVersion": "2017-03-30",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "PlatformUpdateDomainCount": 3,
+        "PlatformFaultDomainCount": 2
+      },
+      "sku": {
+        "name": "Aligned"
+      }
+    },
+    {
+      "name": "[variables('gwAvailabilitySetName')]",
+      "type": "Microsoft.Compute/availabilitySets",
+      "apiVersion": "2017-03-30",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "PlatformUpdateDomainCount": 3,
+        "PlatformFaultDomainCount": 2
+      },
+      "sku": {
+        "name": "Aligned"
+      }
+    },
+    {
+      "name": "[variables('rdshAvailabilitySetName')]",
+      "type": "Microsoft.Compute/availabilitySets",
+      "apiVersion": "2017-03-30",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "PlatformUpdateDomainCount": 20,
+        "PlatformFaultDomainCount": 2
+      },
+      "sku": {
+        "name": "Aligned"
+      }
+    },
+    {
+      "name": "[variables('deployILBforRDSCB')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": { "uri": "[variables('ilbTemplateURL')]" },
+        "parameters": {
+          "ilbName": { "value": "[variables('ilbRDSCBName')]" },
+          "subnetResourceID": { "value": "[variables('RDSsubnetResourceID')]" },
+          "ilbPrivateIPAddress": { "value": "[variables('ilbRDSCBprivateIPAddress')]" }
+        }
+      }
+    },
+    {
+      "name": "[variables('deployILBforRDSGW')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": { "uri": "[variables('ilbTemplateURL')]" },
+        "parameters": {
+          "ilbName": { "value": "[variables('ilbRDSGWName')]" },
+          "subnetResourceID": { "value": "[variables('RDSsubnetResourceID')]" },
+          "ilbPrivateIPAddress": { "value": "[variables('ilbRDSGWprivateIPAddress')]" }
+        }
+      }
+    },
+    {
+      "comments": "Deploy Azure PAW #1 VM",
+      "name": "[variables('paw1VMDeployment')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "dependsOn": [
+        "[variables('rdshAvailabilitySetName')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[variables('AzurePAW1VMTemplateURL')]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "subnetResourceID": {
+            "value": "[variables('RDSsubnetResourceID')]"
+          },
+          "windowsImageSKU": {
+            "value": "[variables('OSVersion')]"
+          },
+          "vmName": {
+            "value": "[variables('paw1VMName')]"
+          },
+          "vmSize": {
+            "value": "[variables('VMSize')]"
+          },
+          "NicName": {
+            "value": "[variables('paw1NICName')]"
+          },
+          "primaryIpAddress": {
+            "value": "[variables('primaryAzurePAW1IpAddress')]"
+          },
+          "domainName": {
+            "value": "[parameters('domainName')]"
+          },
+          "availabilitySetName": {
+            "value": "[variables('rdshAvailabilitySetName')]"
+          },
+          "ouPath": {
+            "value": "[variables('ouPathAdmin')]"
+          }
+        }
+      }
+    },
+    {
+      "comments": "Deploy Azure PAW #2 VM",
+      "name": "[variables('paw2VmDeployment')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "dependsOn": [
+        "[variables('rdshAvailabilitySetName')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[variables('AzurePAW1VMTemplateURL')]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "subnetResourceID": {
+            "value": "[variables('RDSsubnetResourceID')]"
+          },
+          "windowsImageSKU": {
+            "value": "[variables('OSVersion')]"
+          },
+          "vmName": {
+            "value": "[variables('paw2VMName')]"
+          },
+          "vmSize": {
+            "value": "[variables('VMSize')]"
+          },
+          "NicName": {
+            "value": "[variables('paw2NICName')]"
+          },
+          "primaryIpAddress": {
+            "value": "[variables('primaryAzurePAW2IpAddress')]"
+          },
+          "domainName": {
+            "value": "[parameters('domainName')]"
+          },
+          "availabilitySetName": {
+            "value": "[variables('rdshAvailabilitySetName')]"
+          },
+          "ouPath": {
+            "value": "[variables('ouPathAdmin')]"
+          }
+        }
+      }
+    },
+    {
+      "comments": "Deploy Azure PAW #3 VM",
+      "name": "[variables('paw3VMDeployment')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "dependsOn": [
+        "[variables('rdshAvailabilitySetName')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[variables('AzurePAW1VMTemplateURL')]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "subnetResourceID": {
+            "value": "[variables('RDSsubnetResourceID')]"
+          },
+          "windowsImageSKU": {
+            "value": "[variables('OSVersion')]"
+          },
+          "vmName": {
+            "value": "[variables('paw3VMName')]"
+          },
+          "vmSize": {
+            "value": "[variables('VMSize')]"
+          },
+          "NicName": {
+            "value": "[variables('paw3NICName')]"
+          },
+          "primaryIpAddress": {
+            "value": "[variables('primaryAzurePAW3IpAddress')]"
+          },
+          "domainName": {
+            "value": "[parameters('domainName')]"
+          },
+          "availabilitySetName": {
+            "value": "[variables('rdshAvailabilitySetName')]"
+          },
+          "ouPath": {
+            "value": "[variables('ouPathAdmin')]"
+          }
+        }
+      }
+    },
+    {
+      "comments": "Deploy RDS CB and LS VM #1",
+      "name": "[variables('cb1VMDeployment')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "dependsOn": [
+        "[variables('cbAvailabilitySetName')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[variables('AzurePAW1VMTemplateURL')]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "subnetResourceID": {
+            "value": "[variables('RDSsubnetResourceID')]"
+          },
+          "windowsImageSKU": {
+            "value": "[variables('OSVersion')]"
+          },
+          "vmName": {
+            "value": "[variables('cb1VMName')]"
+          },
+          "vmSize": {
+            "value": "[variables('VMSize')]"
+          },
+          "NicName": {
+            "value": "[variables('cb1NICName')]"
+          },
+          "primaryIpAddress": {
+            "value": "[variables('primaryCB1IpAddress')]"
+          },
+          "domainName": {
+            "value": "[parameters('domainName')]"
+          },
+          "availabilitySetName": {
+            "value": "[variables('cbAvailabilitySetName')]"
+          },
+          "ouPath": {
+            "value": "[variables('ouPathAdmin')]"
+          }
+        }
+      }
+    },
+    {
+      "comments": "Deploy RDS CB and LS VM #2",
+      "name": "[variables('cb2VMDeployment')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "dependsOn": [
+        "[variables('cbAvailabilitySetName')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[variables('AzurePAW1VMTemplateURL')]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "subnetResourceID": {
+            "value": "[variables('RDSsubnetResourceID')]"
+          },
+          "windowsImageSKU": {
+            "value": "[variables('OSVersion')]"
+          },
+          "vmName": {
+            "value": "[variables('cb2VMName')]"
+          },
+          "vmSize": {
+            "value": "[variables('VMSize')]"
+          },
+          "NicName": {
+            "value": "[variables('cb2NICName')]"
+          },
+          "primaryIpAddress": {
+            "value": "[variables('primaryCB2IpAddress')]"
+          },
+          "domainName": {
+            "value": "[parameters('domainName')]"
+          },
+          "availabilitySetName": {
+            "value": "[variables('cbAvailabilitySetName')]"
+          },
+          "ouPath": {
+            "value": "[variables('ouPathAdmin')]"
+          }
+        }
+      }
+    },
+    {
+      "comments": "Deploy RDS GW and Web VM #1",
+      "name": "[variables('gw1VMDeployment')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "dependsOn": [
+        "[variables('gwAvailabilitySetName')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[variables('AzurePAW1VMTemplateURL')]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "subnetResourceID": {
+            "value": "[variables('RDSsubnetResourceID')]"
+          },
+          "windowsImageSKU": {
+            "value": "[variables('OSVersion')]"
+          },
+          "vmName": {
+            "value": "[variables('gw1VMName')]"
+          },
+          "vmSize": {
+            "value": "[variables('VMSize')]"
+          },
+          "NicName": {
+            "value": "[variables('gw1NICName')]"
+          },
+          "primaryIpAddress": {
+            "value": "[variables('primaryGW1IpAddress')]"
+          },
+          "domainName": {
+            "value": "[parameters('domainName')]"
+          },
+          "availabilitySetName": {
+            "value": "[variables('gwAvailabilitySetName')]"
+          },
+          "ouPath": {
+            "value": "[variables('ouPathAdmin')]"
+          }
+        }
+      }
+    },
+    {
+      "comments": "Deploy RDS GW and Web VM #2",
+      "name": "[variables('gw2VMDeployment')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "dependsOn": [
+        "[variables('gwAvailabilitySetName')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[variables('AzurePAW1VMTemplateURL')]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "subnetResourceID": {
+            "value": "[variables('RDSsubnetResourceID')]"
+          },
+          "windowsImageSKU": {
+            "value": "[variables('OSVersion')]"
+          },
+          "vmName": {
+            "value": "[variables('gw2VMName')]"
+          },
+          "vmSize": {
+            "value": "[variables('VMSize')]"
+          },
+          "NicName": {
+            "value": "[variables('gw2NICName')]"
+          },
+          "primaryIpAddress": {
+            "value": "[variables('primaryGW2IpAddress')]"
+          },
+          "domainName": {
+            "value": "[parameters('domainName')]"
+          },
+          "availabilitySetName": {
+            "value": "[variables('gwAvailabilitySetName')]"
+          },
+          "ouPath": {
+            "value": "[variables('ouPathAdmin')]"
+          }
+        }
+      }
+    },
+    {
+      "comments": "Deploy RDGW and RDWeb on GW VM",
+      "name": "[variables('gw1Deployment')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "dependsOn": [
+        "[variables('gw1VMDeployment')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[variables('deployRDGWTemplateURL')]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "VMName": {
+            "value": "[variables('gw1VMName')]"
+          },
+          "domainName": {
+            "value": "[parameters('domainName')]"
+          },
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "assetLocationStorageAccount": {
+            "value": "[variables('assetLocationStorageAccount')]"
+          },
+          "storageAccountKeyviaKeyvault": {
+            "reference": {
+              "keyVault": {
+                "id": "[variables('keyVaultID')]"
+              },
+              "secretName": "[variables('secretName')]"
+            }
+          },
+          "storageAccountSASTokenviaKeyvault": {
+            "reference": {
+              "keyVault": {
+                "id": "[variables('keyVaultID')]"
+              },
+              "secretName": "[variables('secretnameSASurl')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "comments": "Deploy RDSH on PAW1 - this needs to be changed to loop",
+      "name": "[variables('rdshDeploymentOnPAW1')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "dependsOn": [
+        "[variables('paw1VMDeployment')]",
+        "[variables('paw2VMDeployment')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[variables('deployRDSHTemplateURL')]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "VMName": {
+            "value": "[variables('paw1VMName')]"
+          },
+          "domainName": {
+            "value": "[parameters('domainName')]"
+          },
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "assetLocationStorageAccount": {
+            "value": "[variables('assetLocationStorageAccount')]"
+          },
+          "storageAccountKeyviaKeyvault": {
+            "reference": {
+              "keyVault": {
+                "id": "[variables('keyVaultID')]"
+              },
+              "secretName": "[variables('secretName')]"
+            }
+          },
+          "storageAccountSASTokenviaKeyvault": {
+            "reference": {
+              "keyVault": {
+                "id": "[variables('keyVaultID')]"
+              },
+              "secretName": "[variables('secretnameSASurl')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "comments": "Deploy RDSH on PAW2 - this needs to be changed to loop",
+      "name": "[variables('rdshDeploymentOnPAW2')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "dependsOn": [
+        "[variables('paw1VMDeployment')]",
+        "[variables('paw2VMDeployment')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[variables('deployRDSHTemplateURL')]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "VMName": {
+            "value": "[variables('paw2VMName')]"
+          },
+          "domainName": {
+            "value": "[parameters('domainName')]"
+          },
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "assetLocationStorageAccount": {
+            "value": "[variables('assetLocationStorageAccount')]"
+          },
+          "storageAccountKeyviaKeyvault": {
+            "reference": {
+              "keyVault": {
+                "id": "[variables('keyVaultID')]"
+              },
+              "secretName": "[variables('secretName')]"
+            }
+          },
+          "storageAccountSASTokenviaKeyvault": {
+            "reference": {
+              "keyVault": {
+                "id": "[variables('keyVaultID')]"
+              },
+              "secretName": "[variables('secretnameSASurl')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "comments": "Deploy RDCB and RDLS on CB VM",
+      "name": "[variables('cb1Deployment')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2015-01-01",
+      "dependsOn": [
+        "[variables('cb1VMDeployment')]",
+        "[variables('gw1Deployment')]",
+        "[variables('rdshDeploymentOnPAW1')]",
+        "[variables('rdshDeploymentOnPAW2')]"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "[variables('deployRDCBTemplateURL')]",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "VMName": {
+            "value": "[variables('cb1VMName')]"
+          },
+          "gwVMName": {
+            "value": "[variables('gw1VMName')]"
+          },
+          "domainName": {
+            "value": "[parameters('domainName')]"
+          },
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          },
+          "numberOfRdshInstances": {
+            "value": "[variables('numberOfRdshInstances')]"
+          },
+          "sessionHost": {
+            "value": "[variables('paw1VMName')]"
+          },
+          "assetLocationStorageAccount": {
+            "value": "[variables('assetLocationStorageAccount')]"
+          },
+          "storageAccountKeyviaKeyvault": {
+            "reference": {
+              "keyVault": {
+                "id": "[variables('keyVaultID')]"
+              },
+              "secretName": "[variables('secretName')]"
+            }
+          },
+          "storageAccountSASTokenviaKeyvault": {
+            "reference": {
+              "keyVault": {
+                "id": "[variables('keyVaultID')]"
+              },
+              "secretName": "[variables('secretnameSASurl')]"
+            }
+          }
+        }
+      }
+    }
+
+  ],
   "outputs": {}
 }

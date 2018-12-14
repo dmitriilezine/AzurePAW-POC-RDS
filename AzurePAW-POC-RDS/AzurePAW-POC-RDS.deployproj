@@ -25,6 +25,11 @@
   <ItemGroup>
     <Content Include="azuredeploy.json" />
     <Content Include="azuredeploy.parameters.json" />
+    <None Include="data\AdminHost1VM.json" />
+    <None Include="data\deployRDCB.json" />
+    <None Include="data\deployRDGW.json" />
+    <None Include="data\deployRDSH.json" />
+    <None Include="data\ilbDeployment.json" />
     <None Include="Deployment.targets">
       <Visible>False</Visible>
     </None>

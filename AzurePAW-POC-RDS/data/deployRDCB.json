@@ -1,0 +1,118 @@
+﻿{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "VMName": {
+      "type": "string",
+      "metadata": {
+        "description": "The VM name of the Server"
+      }
+    },
+    "gwVMName": {
+      "type": "string",
+      "metadata": {
+        "description": "The VM name of the Server"
+      }
+    },
+    "domainName": {
+      "type": "string",
+      "metadata": {
+        "description": "The domain name"
+      }
+    },
+    "adminUsername": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the Administrator of the new VMs and Domain"
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "The password for the Administrator account of the new VMs and Domain"
+      }
+    },
+    "assetLocationStorageAccount": {
+      "type": "string",
+      "metadata": {
+        "description": "The location of resources that the script is dependent on such as linked templates and DSC modules"
+      }
+    },
+    "storageAccountKeyviaKeyvault": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Key for the Storage account"
+      }
+    },
+    "storageAccountSASTokenviaKeyvault": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Key for the Storage account"
+      }
+    },
+    "numberOfRdshInstances": {
+      "type": "int",
+      "metadata": {
+        "description": "Number of Remote Desktop Session Hosts"
+      }
+    },
+    "sessionHost": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the first Session Host"
+      }
+    }
+  },
+  "variables": {
+    "ModulesURL": "[concat(parameters('assetLocationStorageAccount'),'/scripts/RDSConfiguration.zip')]",
+    "ConfigurationFunction": "RDSConfiguration1-8.ps1\\RDSDeployment",
+    "shortDomainName": "[split(parameters('domainName'),'.')[0]]",
+    "domainSuffix": "[split(parameters('domainName'),'.')[1]]",
+    "CACommonName": "[concat(variables('shortDomainName'),' CA')]",
+    "DNSName": "[concat('rds.',parameters('domainName'))]",
+    "gatewayIpRef": "[concat('gateway.',parameters('domainName'))]",
+    "connectionBroker": "[concat('broker.',parameters('domainName'))]",
+    "webAccessServerOLD": "[concat('gateway.',parameters('domainName'))]",
+    "webAccessServer": "[concat(parameters('gwVMName'),'.',parameters('domainName'))]",
+    "sessionHostNamingPrefix": "PAW-"
+  },
+  "resources": [
+    {
+      "name": "[concat(parameters('VMName'),'/ConfigureRDCBandRDLS')]",
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2015-06-15",
+      "properties": {
+        "publisher": "Microsoft.Powershell",
+        "type": "DSC",
+        "typeHandlerVersion": "2.11",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "modulesUrl": "[variables('ModulesURL')]",
+          "configurationFunction": "[variables('ConfigurationFunction')]",
+          "SasToken": "[parameters('storageAccountSASTokenviaKeyvault')]",
+          "properties": {
+            "adminCreds": {
+              "userName": "[parameters('adminUserName')]",
+              "password": "PrivateSettingsRef:adminPassword"
+            },
+            "domainName": "[parameters('domainName')]",
+            "externalfqdn": "[variables('gatewayIpRef')]",
+            "numberOfRdshInstances": "[parameters('numberOfRdshInstances')]",
+            "sessionHostNamingPrefix": "[parameters('sessionHost')]",
+            "webAccessServer": "[variables('webAccessServer')]",
+            "CACommonName": "[variables('CACommonName')]",
+            "DNSName": "[variables('DNSName')]"
+          }
+        },
+        "protectedSettings": {
+          "items": {
+            "adminPassword": "[parameters('adminPassword')]",
+            "configurationUrlSasToken": "[parameters('storageAccountSASTokenviaKeyvault')]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {}
+}
