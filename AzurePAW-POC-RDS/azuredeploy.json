@@ -135,6 +135,69 @@
       },
       "defaultValue": "GW2-LAB"
     },
+    "Host1IPAddress": {
+      "type": "string",
+      "metadata": {
+        "description": "IP address for RDS Host 1"
+      },
+      "defaultValue": "10.0.3.4"
+    },
+    "Host2IPAddress": {
+      "type": "string",
+      "metadata": {
+        "description": "IP address for RDS Host 2"
+      },
+      "defaultValue": "10.0.3.5"
+    },
+    "Host3IPAddress": {
+      "type": "string",
+      "metadata": {
+        "description": "IP address for RDS Host 3"
+      },
+      "defaultValue": "10.0.3.6"
+    },
+    "ConnectionBrocker1IPAddress": {
+      "type": "string",
+      "metadata": {
+        "description": "IP address for RDS Connection Brocker 1"
+      },
+      "defaultValue": "10.0.3.15"
+    },
+    "ConnectionBrocker2IPAddress": {
+      "type": "string",
+      "metadata": {
+        "description": "IP address for RDS Connection Brocker 2"
+      },
+      "defaultValue": "10.0.3.16"
+    },
+    "Gateway1IPAddress": {
+      "type": "string",
+      "metadata": {
+        "description": "IP address for RDS Gateway 1"
+      },
+      "defaultValue": "10.0.3.17"
+    },
+    "Gateway2IPAddress": {
+      "type": "string",
+      "metadata": {
+        "description": "IP address for RDS Gateway 2"
+      },
+      "defaultValue": "10.0.3.18"
+    },
+    "ILBforConnectionBrocker": {
+      "type": "string",
+      "metadata": {
+        "description": "ILB for Connection Brocker"
+      },
+      "defaultValue": "10.0.3.100"
+    },
+    "ILBforGateway": {
+      "type": "string",
+      "metadata": {
+        "description": "ILB for Gateway"
+      },
+      "defaultValue": "10.0.3.101"
+    },
     "ScriptsLocation": {
       "type": "string",
       "metadata": {
@@ -152,16 +215,16 @@
 
     "RDSsubnetResourceID": "[resourceId(parameters('existingVirtualNetworkResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('existingVirtualNetworkName'), parameters('RdsSubnetName'))]",
 
-    "primaryAzurePAW1IpAddress": "[concat(parameters('vNetIPSpace'),'.3.4')]",
-    "primaryAzurePAW2IpAddress": "[concat(parameters('vNetIPSpace'),'.3.5')]",
-    "primaryAzurePAW3IpAddress": "[concat(parameters('vNetIPSpace'),'.3.6')]",
-    "primaryCB1IpAddress": "[concat(parameters('vNetIPSpace'),'.3.15')]",
-    "primaryCB2IpAddress": "[concat(parameters('vNetIPSpace'),'.3.16')]",
-    "primaryGW1IpAddress": "[concat(parameters('vNetIPSpace'),'.3.17')]",
-    "primaryGW2IpAddress": "[concat(parameters('vNetIPSpace'),'.3.18')]",
+    "primaryAzurePAW1IpAddress": "[parameters('Host1IPAddress')]",
+    "primaryAzurePAW2IpAddress": "[parameters('Host2IPAddress')]",
+    "primaryAzurePAW3IpAddress": "[parameters('Host3IPAddress')]",
+    "primaryCB1IpAddress": "[parameters('ConnectionBrocker1IPAddress')]",
+    "primaryCB2IpAddress": "[parameters('ConnectionBrocker2IPAddress')]",
+    "primaryGW1IpAddress": "[parameters('Gateway1IPAddress')]",
+    "primaryGW2IpAddress": "[parameters('Gateway2IPAddress')]",
 
-    "ilbRDSCBprivateIPAddress": "[concat(parameters('vNetIPSpace'),'.3.100')]",
-    "ilbRDSGWprivateIPAddress": "[concat(parameters('vNetIPSpace'),'.3.101')]",
+    "ilbRDSCBprivateIPAddress": "[parameters('ILBforConnectionBrocker')]",
+    "ilbRDSGWprivateIPAddress": "[parameters('ILBforGateway')]",
 
     "ilbTemplateURL": "[concat(variables('assetLocation'),'/data/ilbDeployment.json')]",
     "AzurePAW1VMTemplateURL": "[concat(variables('assetLocation'),'/data/AdminHost1VM.json')]",
