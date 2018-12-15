@@ -66,25 +66,13 @@
       "type": "string",
       "allowedValues": [
         "Standard_DS12_v2",
+        "Standard_D8S_v3",
         "Standard_A2"
       ],
       "metadata": {
         "description": "VM Size. The bigger it is, the more $ you will spend."
       },
-      "defaultValue": "Standard_A2"
-    },
-    "vNetIPSpace": {
-      "type": "string",
-      "defaultValue": "10.0",
-      "allowedValues": [
-        "10.0",
-        "10.1",
-        "10.2",
-        "10.3"
-      ],
-      "metadata": {
-        "description": "Specify the IP space for the vNet where this deployment will be installed."
-      }
+      "defaultValue": "Standard_D8S_v3"
     },
     "adminHost1VMName": {
       "type": "string",
